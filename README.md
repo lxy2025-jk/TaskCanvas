@@ -12,10 +12,17 @@ TaskCanvas 是一款面向小组协作与个人备考的一体化学习任务管
 
 ## 当前实现
 
-- `work.py`：Flask 后端骨架
-- `requirements.txt`：依赖列表
-- `index.html`：前端页面样式基础
+- `work.py`：Flask 后端骨架，支持 WebSocket 实时推送
+- `requirements.txt`：依赖列表（新增 flask-socketio）
+- `study-manager.html`：前端页面，支持 AJAX 调用、拖拽排序、签到打卡
 - `vocab_tool.py`：现有单词复习工具
+
+## 新增功能
+
+- **实时推送**：WebSocket 支持任务更新和签到事件广播
+- **拖拽排序**：HTML5 拖拽 API 实现任务顺序调整
+- **签到打卡**：每日签到功能，支持庆祝动画
+- **AJAX 集成**：前后端数据同步，无需页面刷新
 
 ## 运行方式
 
@@ -34,11 +41,19 @@ TaskCanvas 是一款面向小组协作与个人备考的一体化学习任务管
    ```powershell
    python work.py
    ```
+   或激活虚拟环境后：
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   python work.py
+   ```
 
 4. 初始化数据库（可选）：
    ```powershell
    curl -X POST http://127.0.0.1:5000/api/init -H "Content-Type: application/json" -d '{"exam_date":"2026-12-31"}'
    ```
+
+5. 打开前端页面：
+   在浏览器中打开 `study-manager.html`
 
 ## API 参考
 

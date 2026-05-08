@@ -27,8 +27,7 @@ def get_db_connection() -> sqlite3.Connection:
 def init_db(exam_date: Optional[str] = None) -> None:
     connection = get_db_connection()
     cursor = connection.cursor()
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -36,10 +35,8 @@ def init_db(exam_date: Optional[str] = None) -> None:
             password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
-        """
-    )
-    cursor.execute(
-        """
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS teams (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -48,10 +45,8 @@ def init_db(exam_date: Optional[str] = None) -> None:
             owner_id INTEGER NOT NULL,
             FOREIGN KEY(owner_id) REFERENCES users(id)
         )
-        """
-    )
-    cursor.execute(
-        """
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS team_members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             team_id INTEGER NOT NULL,
@@ -62,10 +57,8 @@ def init_db(exam_date: Optional[str] = None) -> None:
             FOREIGN KEY(team_id) REFERENCES teams(id),
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
-        """
-    )
-    cursor.execute(
-        """
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -83,16 +76,13 @@ def init_db(exam_date: Optional[str] = None) -> None:
             FOREIGN KEY(owner_id) REFERENCES users(id),
             FOREIGN KEY(team_id) REFERENCES teams(id)
         )
-        """
-    )
-    cursor.execute(
-        """
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS configs (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )
-        """
-    )
+    """)
 
     if exam_date:
         cursor.execute(
@@ -455,6 +445,41 @@ def dashboard():
             "overdue": overdue,
         }
     )
+
+
+@app.route("/api/checkin", methods=["POST"])
+def checkin():
+    data = request.get_json(silent=True) or {}
+    owner_id = data.get("owner_id")
+
+    if not owner_id:
+        return jsonify({"error": "owner_id is required"}), 400
+
+    today = datetime.date.today().isoformat()
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    # Check if already checked in today
+    cursor.execute(
+        "SELECT COUNT(*) FROM tasks WHERE owner_id = ? AND title = '签到' AND created_at LIKE ?",
+        (owner_id, f"{today}%"),
+    )
+    if cursor.fetchone()[0] > 0:
+        connection.close()
+        return jsonify({"error": "already checked in today"}), 409
+
+    # Create checkin task
+    cursor.execute(
+        "INSERT INTO tasks (title, description, owner_id, category, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("签到", "每日签到", owner_id, "daily", "completed", datetime.datetime.utcnow().isoformat() + "Z", datetime.datetime.utcnow().isoformat() + "Z"),
+    )
+    connection.commit()
+    connection.close()
+
+    # Emit checkin event
+    # socketio.emit('checkin', {'owner_id': owner_id, 'date': today})
+
+    return jsonify({"status": "checked in", "date": today})
 
 
 if __name__ == "__main__":

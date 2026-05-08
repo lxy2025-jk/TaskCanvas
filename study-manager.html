@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>学习管理系统</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <style>
 /* ===== 基础变量与全局样式 ===== */
 :root{
@@ -258,6 +259,22 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 }
 .task-progress{font-size:12px;color:var(--text2);margin-left:auto}
 .task-progress span{color:var(--success);font-weight:700}
+
+.checkin-btn{
+  padding:6px 12px;
+  border-radius:8px;
+  cursor:pointer;
+  font-size:12px;
+  background:linear-gradient(135deg, var(--accent), #ff6b7f);
+  color:white;
+  border:none;
+  transition:all .2s cubic-bezier(.4,0,.2,1);
+  margin-right:10px;
+}
+.checkin-btn:hover{
+  transform:translateY(-2px);
+  box-shadow:0 4px 12px rgba(233,69,96,.3);
+}
 
 .task-timeline{display:flex;flex-direction:column;gap:6px}
 .task-block{
@@ -962,7 +979,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
     <div class="countdown-bar" id="countdownBar"></div>
 
     <div id="page-tasks" class="page active">
-      <div class="tasks-header"><h2>每日任务</h2><div class="week-nav" id="weekNav"></div><div class="task-progress" id="taskProgress"></div></div>
+      <div class="tasks-header">
+        <h2>每日任务</h2>
+        <button class="checkin-btn" onclick="checkinAjax()" title="每日签到">📅 签到</button>
+        <div class="week-nav" id="weekNav"></div>
+        <div class="task-progress" id="taskProgress"></div>
+      </div>
       <div class="task-timeline" id="taskTimeline"></div>
       <div class="task-stats" id="taskStats"></div>
     </div>
@@ -1029,6 +1051,76 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <div id="progressEditOverlay" style="display:none"></div>
 
 <script>
+// ===== 全局 AJAX 函数 =====
+async function apiCall(endpoint, method = 'GET', data = null) {
+  const config = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+  if (data) config.body = JSON.stringify(data);
+
+  try {
+    const response = await fetch(`http://localhost:5000${endpoint}`, config);
+    return await response.json();
+  } catch (error) {
+    console.error('API call failed:', error);
+    return null;
+  }
+}
+
+async function checkinAjax() {
+  const result = await apiCall('/api/checkin', 'POST', { owner_id: 1 });
+  if (result && result.status === 'checked in') {
+    showCelebration();
+  } else {
+    alert('今日已签到或签到失败');
+  }
+}
+
+function showCelebration() {
+  const celebrate = document.createElement('div');
+  celebrate.className = 'celebrate';
+  celebrate.style.position = 'fixed';
+  celebrate.style.top = '50%';
+  celebrate.style.left = '50%';
+  celebrate.style.pointerEvents = 'none';
+  celebrate.style.zIndex = '999';
+
+  for (let i = 0; i < 20; i++) {
+    const particle = document.createElement('div');
+    particle.className = 'particle';
+    particle.style.position = 'absolute';
+    particle.style.width = '8px';
+    particle.style.height = '8px';
+    particle.style.borderRadius = '50%';
+    particle.style.background = `hsl(${Math.random() * 360}, 70%, 60%)`;
+    particle.style.left = '0';
+    particle.style.top = '0';
+    particle.style.setProperty('--px', `${(Math.random() - 0.5) * 200}px`);
+    particle.style.setProperty('--py', `${(Math.random() - 0.5) * 200}px`);
+    particle.style.animation = 'particleBurst 0.7s ease-out forwards';
+    celebrate.appendChild(particle);
+  }
+
+  document.body.appendChild(celebrate);
+  setTimeout(() => celebrate.remove(), 1000);
+}
+
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`.nav-btn[onclick="showPage('${name}')"]`).classList.add('active');
+  if(name==='tasks')renderTasks();
+  if(name==='flashcard')renderFlashcard();
+  if(name==='review')renderReview();
+  if(name==='progress')renderProgress();
+  if(name==='tips')renderTips();
+  renderCountdown();
+}
+
 // ===== Data Manager =====
 const DM={
   _k:{tasks:'sm_tasks',cards:'sm_cards',reviews:'sm_reviews',progress:'sm_progress',tips:'sm_tips'},
@@ -1261,18 +1353,6 @@ function renderCountdown(){
 }
 
 // ===== View =====
-function showPage(name){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-  document.querySelector(`.nav-btn[onclick="showPage('${name}')"]`).classList.add('active');
-  if(name==='tasks')renderTasks();
-  if(name==='flashcard')renderFlashcard();
-  if(name==='review')renderReview();
-  if(name==='progress')renderProgress();
-  if(name==='tips')renderTips();
-  renderCountdown();
-}
 
 function renderTasks(){
   const days=TM.getDays();
@@ -1282,11 +1362,14 @@ function renderTasks(){
   const tasks=TM.getForDay(TM.currentDay);
   const dc=tasks.filter(t=>t.done).length;
   document.getElementById('taskProgress').innerHTML=`完成 <span>${dc}/${tasks.length}</span>`;
-  document.getElementById('taskTimeline').innerHTML=tasks.map(t=>{const c=TM.color(t.subject);const l=TM.label(t.subject);const cls=t.done?'done':'';return`<div class="task-block ${cls}" onclick="toggleTask(${t.id})"><div class="task-stripe" style="background:${c}"></div><div class="task-time">${t.time}</div><div class="task-check"></div><div class="task-content">${t.content}<span class="task-subject ${t.subject}">${l}</span></div></div>`}).join('');
+  document.getElementById('taskTimeline').innerHTML=tasks.map(t=>{const c=TM.color(t.subject);const l=TM.label(t.subject);const cls=t.done?'done':'';return`<div class="task-block ${cls}" draggable="true" data-id="${t.id}" onclick="toggleTaskAjax(${t.id})"><div class="task-stripe" style="background:${c}"></div><div class="task-time">${t.time}</div><div class="task-check"></div><div class="task-content">${t.content}<span class="task-subject ${t.subject}">${l}</span></div></div>`}).join('');
   const subjects={};tasks.forEach(t=>{if(!subjects[t.subject])subjects[t.subject]={total:0,done:0};subjects[t.subject].total++;if(t.done)subjects[t.subject].done++});
   const stats=document.getElementById('taskStats');
   const entries=Object.entries(subjects);
   stats.innerHTML=entries.slice(0,3).map(([s,v])=>`<div class="stat-card"><div class="val" style="color:${TM.color(s)}">${v.done}/${v.total}</div><div class="label">${TM.label(s)}完成率</div></div>`).join('');
+
+  // 初始化拖拽排序
+  initDragAndDrop();
 }
 function switchDay(d){TM.currentDay=d;renderTasks()}
 function toggleTask(id){
@@ -1299,35 +1382,84 @@ function toggleTask(id){
     if(el){const r=el.getBoundingClientRect();createParticles(r.left+r.width/2,r.top+r.height/2)}
   }
 }
-function createParticles(x,y){
-  const colors=['#e94560','#4fc3f7','#66bb6a','#ffb74d','#ce93d8','#fff'];
-  const container=document.createElement('div');
-  container.className='celebrate';
-  container.style.left=x+'px';container.style.top=y+'px';
-  for(let i=0;i<12;i++){
-    const p=document.createElement('div');
-    p.className='particle';
-    const angle=(Math.PI*2*i)/12;
-    const dist=30+Math.random()*40;
-    p.style.setProperty('--px',Math.cos(angle)*dist+'px');
-    p.style.setProperty('--py',Math.sin(angle)*dist+'px');
-    p.style.background=colors[Math.floor(Math.random()*colors.length)];
-    p.style.animationDelay=Math.random()*.1+'s';
-    container.appendChild(p);
-  }
-  document.body.appendChild(container);
-  setTimeout(()=>container.remove(),800);
+function initDragAndDrop() {
+  let draggedElement = null;
+
+  document.addEventListener('dragstart', function(e) {
+    if (e.target.classList.contains('task-block')) {
+      draggedElement = e.target;
+      e.target.style.opacity = '0.5';
+    }
+  });
+
+  document.addEventListener('dragend', function(e) {
+    if (draggedElement) {
+      draggedElement.style.opacity = '1';
+      draggedElement = null;
+    }
+  });
+
+  document.addEventListener('dragover', function(e) {
+    e.preventDefault();
+  });
+
+  document.addEventListener('drop', async function(e) {
+    e.preventDefault();
+    if (!draggedElement) return;
+
+    const dropTarget = e.target.closest('.task-block');
+    if (!dropTarget || dropTarget === draggedElement) return;
+
+    const draggedId = draggedElement.dataset.id;
+    const targetId = dropTarget.dataset.id;
+
+    // 重新排序任务
+    const taskBlocks = Array.from(document.querySelectorAll('.task-block'));
+    const draggedIndex = taskBlocks.indexOf(draggedElement);
+    const targetIndex = taskBlocks.indexOf(dropTarget);
+
+    taskBlocks.splice(draggedIndex, 1);
+    taskBlocks.splice(targetIndex, 0, draggedElement);
+
+    // 更新 order_index
+    for (let i = 0; i < taskBlocks.length; i++) {
+      const taskId = taskBlocks[i].dataset.id;
+      await apiCall(`/api/tasks/${taskId}`, 'PUT', { order_index: i });
+    }
+
+    loadTasksAjax();
+  });
+}
 }
 
 // Flashcard
 let curFcTab='review';
 function showFcTab(tab){curFcTab=tab;document.querySelectorAll('.fc-tab').forEach(t=>t.classList.remove('active'));document.querySelector(`.fc-tab[onclick="showFcTab('${tab}')"]`).classList.add('active');document.getElementById('fc-review').style.display=tab==='review'?'':'none';document.getElementById('fc-create').style.display=tab==='create'?'':'none';document.getElementById('fc-browse').style.display=tab==='browse'?'':'none';renderFlashcard()}
 function renderFlashcard(){const due=FM.getDue();document.getElementById('fcBadge').textContent=due.length;if(curFcTab==='review')renderFcReview(due);if(curFcTab==='browse')renderFcBrowse()}
-function renderFcReview(due){const c=document.getElementById('fc-review');if(!due.length){c.innerHTML='<div class="fc-empty"><div class="big">✔</div>今日没有待复习的卡片</div>';return}if(FM.ri>=due.length)FM.ri=0;const card=due[FM.ri];FM.flipped=false;c.innerHTML=`<div class="fc-counter">第${FM.ri+1}/${due.length}张</div><div class="fc-card-container"><div class="fc-card" onclick="flipCard()"><div class="fc-front"><div class="fc-label">正面</div><div class="fc-text">${esc(card.front)}</div></div><div class="fc-back"><div class="fc-label">背面</div><div class="fc-text">${esc(card.back)}</div></div></div></div><div class="fc-hint">点击翻转 · 空格键翻转</div><div class="fc-difficulty" id="fcDiff" style="display:none"><button class="diff-btn d1" onclick="rateCard(${card.id},1)">1再看</button><button class="diff-btn d2" onclick="rateCard(${card.id},2)">2吃力</button><button class="diff-btn d3" onclick="rateCard(${card.id},3)">3记住</button><button class="diff-btn d4" onclick="rateCard(${card.id},4)">4熟悉</button><button class="diff-btn d5" onclick="rateCard(${card.id},5)">5完美</button></div>`}
+function renderFcReview(due){
+  const c=document.getElementById('fc-review');
+  if(!due.length){
+    c.innerHTML='<div class="fc-empty"><div class="big">✔</div>今日没有待复习的卡片</div>';
+    return;
+  }
+  if(FM.ri>=due.length)FM.ri=0;
+  const card=due[FM.ri];
+  FM.flipped=false;
+  c.innerHTML=`<div class="fc-counter">第${FM.ri+1}/${due.length}张</div><div class="fc-card-container"><div class="fc-card" onclick="flipCard()"><div class="fc-front"><div class="fc-label">正面</div><div class="fc-text">${esc(card.front)}</div></div><div class="fc-back"><div class="fc-label">背面</div><div class="fc-text">${esc(card.back)}</div></div></div></div><div class="fc-hint">点击翻转 · 空格键翻转</div><div class="fc-difficulty" id="fcDiff" style="display:none"><button class="diff-btn d1" onclick="rateCard(${card.id},1)">1再看</button><button class="diff-btn d2" onclick="rateCard(${card.id},2)">2吃力</button><button class="diff-btn d3" onclick="rateCard(${card.id},3)">3记住</button><button class="diff-btn d4" onclick="rateCard(${card.id},4)">4熟悉</button><button class="diff-btn d5" onclick="rateCard(${card.id},5)">5完美</button></div>`;
+}
 function flipCard(){FM.flipped=!FM.flipped;const el=document.querySelector('.fc-card');if(el){el.classList.toggle('flipped',FM.flipped);const d=document.getElementById('fcDiff');if(d)d.style.display=FM.flipped?'flex':'none'}}
 function rateCard(id,d){FM.rate(id,d);FM.ri++;renderFlashcard()}
 function createCard(){const f=document.getElementById('fcFront').value.trim();const b=document.getElementById('fcBack').value.trim();const s=document.getElementById('fcSubject').value;const tg=document.getElementById('fcTag').value.trim();if(!f||!b){alert('内容不能为空');return}FM.create(f,b,s,tg);document.getElementById('fcFront').value='';document.getElementById('fcBack').value='';document.getElementById('fcTag').value='';renderFlashcard()}
-function renderFcBrowse(){const c=document.getElementById('fc-browse');const cards=FM.cards;const g={};cards.forEach(c=>{if(!g[c.subject])g[c.subject]=[];g[c.subject].push(c)});c.innerHTML=Object.entries(g).map(([s,list])=>{const cl=s==='数学'?'var(--math)':s==='数据结构'||s==='计组'?'var(--cs)':s==='英语'?'var(--eng)':'var(--text2)';return`<div class="subject-group"><h3 style="color:${cl}">${s}(${list.length})</h3><div class="card-list">${list.map(c=>`<div class="card-item" onclick="flipBrowseCard(${c.id})"><div class="front-preview">${esc(c.front)}</div><div class="meta">复习${c.reviewCount}次·下次<span class="due">${c.nextReview}</span>·<span class="tag">${c.tag}</span></div><div class="delete-btn" onclick="event.stopPropagation();delCard(${c.id})">删除</div></div>`).join('')}</div></div>`}).join('')}
+function renderFcBrowse(){
+  const c=document.getElementById('fc-browse');
+  const cards=FM.cards;
+  const g={};
+  cards.forEach(c=>{if(!g[c.subject])g[c.subject]=[];g[c.subject].push(c)});
+  c.innerHTML=Object.entries(g).map(([s,list])=>{
+    const cl=s==='数学'?'var(--math)':s==='数据结构'||s==='计组'?'var(--cs)':s==='英语'?'var(--eng)':'var(--text2)';
+    return`<div class="subject-group"><h3 style="color:${cl}">${s}(${list.length})</h3><div class="card-list">${list.map(c=>`<div class="card-item" onclick="flipBrowseCard(${c.id})"><div class="front-preview">${esc(c.front)}</div><div class="meta">复习${c.reviewCount}次·下次<span class="due">${c.nextReview}</span>·<span class="tag">${c.tag}</span></div><div class="delete-btn" onclick="event.stopPropagation();delCard(${c.id})">删除</div></div>`).join('')}</div></div>`;
+  }).join('');
+}
 function flipBrowseCard(id){const card=FM.cards.find(c=>c.id===id);if(!card)return;const item=document.querySelector(`.card-item[onclick="flipBrowseCard(${id})"]`);if(!item)return;const p=item.querySelector('.front-preview');if(p.dataset.flipped){p.textContent=card.front;p.dataset.flipped=''}else{p.textContent=card.back;p.dataset.flipped='1'}}
 function delCard(id){if(confirm('确定删除？')){FM.del(id);renderFcBrowse()}}
 
@@ -1417,6 +1549,93 @@ document.addEventListener('keydown',e=>{
 // Init
 TM.init();FM.init();RM.init();PM.init();TipM.init();
 renderTasks();renderCountdown();
+
+// ===== AJAX 集成 =====
+let socket = null;
+
+function initAjax() {
+  // SocketIO temporarily disabled
+  // socket = io('http://localhost:5000');
+  // socket.on('connect', function() {
+  //   console.log('Connected to TaskCanvas server');
+  // });
+  // socket.on('task_changed', function(data) {
+  //   console.log('Task updated:', data);
+  //   loadTasksAjax();
+  // });
+  // socket.on('checkin', function(data) {
+  //   console.log('Checkin event:', data);
+  //   showCelebration();
+  // });
+}
+
+async function apiCall(endpoint, method = 'GET', data = null) {
+  const config = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+  if (data) config.body = JSON.stringify(data);
+
+  try {
+    const response = await fetch(`http://localhost:5000${endpoint}`, config);
+    return await response.json();
+  } catch (error) {
+    console.error('API call failed:', error);
+    return null;
+  }
+}
+
+async function loadTasksAjax() {
+  const tasks = await apiCall('/api/tasks?owner_id=1');
+  if (tasks) {
+    TM.tasks = tasks.map(t => ({
+      id: t.id,
+      date: t.due_date || new Date().toISOString().split('T')[0],
+      time: '09:00-10:00', // 默认时间
+      subject: t.category,
+      content: t.title,
+      done: t.status === 'completed'
+    }));
+    renderTasks();
+  }
+}
+
+async function toggleTaskAjax(taskId) {
+  const task = TM.tasks.find(t => t.id == taskId);
+  if (!task) return;
+
+  const newStatus = task.done ? 'pending' : 'completed';
+  const result = await apiCall(`/api/tasks/${taskId}`, 'PUT', { status: newStatus });
+  if (result) {
+    task.done = !task.done;
+    // socket.emit('task_updated', { task_id: taskId, status: newStatus });
+    renderTasks();
+  }
+}
+
+async function createTaskAjax() {
+  const title = prompt('任务标题:');
+  if (!title) return;
+
+  const result = await apiCall('/api/tasks', 'POST', {
+    title,
+    owner_id: 1,
+    category: 'daily'
+  });
+  if (result) {
+    loadTasksAjax();
+  }
+}
+
+// ===== 初始化 =====
+document.addEventListener('DOMContentLoaded', function() {
+  initAjax();
+  initDragAndDrop();
+  loadTasksAjax();
+});
+
 </script>
 </body>
 </html>
