@@ -372,7 +372,7 @@ def main():
             print("\n  加油，明天见！\n")
             break
         else:
-            print("  无效选项，请重新选择")
+            print("  无效选项，请重新选择。")
 
 
 if __name__ == "__main__":
